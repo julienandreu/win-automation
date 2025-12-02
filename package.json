@@ -95,6 +95,8 @@
     "prepare": "husky",
     "prepublishOnly": "napi prepublish -t npm",
     "preversion": "napi build --platform --output-dir dist && git add .",
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run",
     "test": "vitest run",
     "test:watch": "vitest",
     "version": "napi version"

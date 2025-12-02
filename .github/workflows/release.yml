@@ -1,0 +1,157 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  universalize:
+    name: Universalize macOS binaries
+    runs-on: macos-latest
+    if: github.event.workflow_run.conclusion == 'success' && vars.ENABLE_MACOS_BUILDS == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Download macOS artifacts from CI workflow
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: CI.yml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: |
+            bindings-x86_64-apple-darwin
+            bindings-aarch64-apple-darwin
+          path: artifacts
+          if_no_artifact_found: fail
+
+      - name: Universalize macOS binaries
+        run: |
+          # Find and copy the .node files to dist directory (where napi expects them)
+          mkdir -p dist
+          X64_BINARY=$(find artifacts -name "win-automation.darwin-x64.node" -type f | head -1)
+          ARM64_BINARY=$(find artifacts -name "win-automation.darwin-arm64.node" -type f | head -1)
+
+          if [ -z "$X64_BINARY" ] || [ -z "$ARM64_BINARY" ]; then
+            echo "Error: Could not find both macOS binaries"
+            echo "Found files:"
+            find artifacts -name "*.node" -type f
+            exit 1
+          fi
+
+          echo "Found x64 binary: $X64_BINARY"
+          echo "Found arm64 binary: $ARM64_BINARY"
+
+          # Copy binaries to dist directory
+          cp "$X64_BINARY" dist/win-automation.darwin-x64.node
+          cp "$ARM64_BINARY" dist/win-automation.darwin-arm64.node
+
+          # Create universal binary using napi universalize
+          yarn napi universalize --output-dir dist
+
+          # Verify universal binary was created
+          if [ -f "dist/win-automation.darwin-universal.node" ]; then
+            echo "✓ Universal binary created successfully"
+            ls -lh dist/win-automation.darwin-universal.node
+            # Copy back to artifacts for upload
+            cp dist/win-automation.darwin-universal.node artifacts/
+          else
+            echo "Error: Universal binary was not created"
+            ls -la dist/
+            exit 1
+          fi
+
+      - name: Upload universal binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: bindings-darwin-universal
+          path: artifacts/win-automation.darwin-universal.node
+          if-no-files-found: error
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [universalize]
+    # Run release even if universalize is skipped (when macOS builds are disabled)
+    if: github.event.workflow_run.conclusion == 'success'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: yarn
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Create npm dirs
+        run: yarn napi create-npm-dirs
+
+      - name: Download Linux artifacts from CI workflow
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: CI.yml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: bindings-x86_64-unknown-linux-gnu
+          path: artifacts
+          if_no_artifact_found: warn
+
+      - name: Download Windows artifacts from CI workflow
+        if: vars.ENABLE_WINDOWS_BUILDS == 'true'
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: CI.yml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: bindings-x86_64-pc-windows-msvc
+          path: artifacts
+          if_no_artifact_found: warn
+
+      - name: Download universal macOS binary
+        if: vars.ENABLE_MACOS_BUILDS == 'true'
+        uses: actions/download-artifact@v6
+        with:
+          name: bindings-darwin-universal
+          path: artifacts
+          if-no-files-found: warn
+
+      - name: Move artifacts
+        run: yarn artifacts
+
+      - name: List packages
+        run: ls -R ./npm
+        shell: bash
+
+      - name: Release and Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: yarn release

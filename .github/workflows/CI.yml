@@ -16,7 +16,9 @@ env:
       - '**/*.gitignore'
       - .editorconfig
       - docs/**
-  pull_request: null
+  pull_request:
+    branches:
+      - main
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -62,6 +64,11 @@ jobs:
             build: yarn build --target aarch64-apple-darwin
     name: stable - ${{ matrix.settings.target }} - node@22
     runs-on: ${{ matrix.settings.host }}
+    # Disable macOS and Windows builds by default (set ENABLE_MACOS_BUILDS=true or ENABLE_WINDOWS_BUILDS=true in repo variables to enable)
+    if: |
+      (matrix.settings.host == 'ubuntu-latest') ||
+      (matrix.settings.host == 'macos-latest' && vars.ENABLE_MACOS_BUILDS == 'true') ||
+      (matrix.settings.host == 'windows-latest' && vars.ENABLE_WINDOWS_BUILDS == 'true')
     steps:
       - uses: actions/checkout@v6
       - name: Setup node
@@ -134,6 +141,10 @@ jobs:
           - '20'
           - '22'
     runs-on: ${{ matrix.settings.host }}
+    # Skip Windows tests if Windows builds are disabled, skip macOS tests if macOS builds are disabled
+    if: |
+      (matrix.settings.host == 'windows-latest' && vars.ENABLE_WINDOWS_BUILDS == 'true') ||
+      (matrix.settings.host == 'macos-latest' && vars.ENABLE_MACOS_BUILDS == 'true')
     steps:
       - uses: actions/checkout@v6
       - name: Setup node
@@ -219,50 +230,28 @@ jobs:
           image: ${{ steps.docker.outputs.IMAGE }}
           options: '-v ${{ github.workspace }}:${{ github.workspace }} -w ${{ github.workspace }} --platform ${{ steps.docker.outputs.PLATFORM }}'
           run: yarn test
-  publish:
-    name: Publish
+  release-preview:
+    name: Release Preview
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
     needs:
       - lint
       - test-macOS-windows-binding
       - test-linux-binding
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Setup node
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: yarn
       - name: Install dependencies
-        run: yarn install
-      - name: create npm dirs
-        run: yarn napi create-npm-dirs
-      - name: Download all artifacts
-        uses: actions/download-artifact@v6
-        with:
-          path: artifacts
-      - name: Move artifacts
-        run: yarn artifacts
-      - name: List packages
-        run: ls -R ./npm
-        shell: bash
-      - name: Publish
-        run: |
-          npm config set provenance true
-          if git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+$";
-          then
-            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-            npm publish --access public
-          elif git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+";
-          then
-            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-            npm publish --tag next --access public
-          else
-            echo "Not a release, skipping publish"
-          fi
+        run: yarn install --frozen-lockfile
+      - name: Build project
+        run: yarn build
+      - name: Preview semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: yarn release:dry
