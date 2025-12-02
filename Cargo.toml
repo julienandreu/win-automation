@@ -1,0 +1,58 @@
+
+[package]
+authors      = ["julienandreu <julienandreu@me.com>"]
+categories   = ["os::windows-apis", "development-tools"]
+description  = "Windows automation toolkit - Node.js addon built with NAPI and Tokio"
+edition      = "2021"
+keywords     = ["windows", "automation", "win32", "system", "napi", "nodejs"]
+license      = "MIT"
+name         = "win_automation"
+readme       = "README.md"
+repository   = "https://github.com/julienandreu/win-automation"
+rust-version = "1.85.0"
+version      = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi        = "3.0.0"
+napi-derive = "3.0.0"
+
+[build-dependencies]
+napi-build = "2"
+
+# Development profile: fast compilation, full debugging
+[profile.dev]
+codegen-units    = 256
+debug            = 2
+debug-assertions = true
+incremental      = true
+lto              = false
+opt-level        = 0
+overflow-checks  = true
+panic            = "unwind"
+rpath            = false
+split-debuginfo  = "unpacked"
+
+# Release profile: maximum optimization, minimal size
+[profile.release]
+codegen-units    = 1
+debug            = false
+debug-assertions = false
+incremental      = false
+lto              = "fat"    # Full LTO for maximum optimization
+opt-level        = "z"      # Optimize for size
+overflow-checks  = false
+panic            = "abort"  # Smaller binary size
+rpath            = false
+split-debuginfo  = "packed"
+strip            = true
+
+# Test profile: inherit dev settings for fast test compilation
+[profile.test]
+inherits = "dev"
+
+# Benchmark profile: inherit release settings for accurate benchmarks
+[profile.bench]
+inherits = "release"
