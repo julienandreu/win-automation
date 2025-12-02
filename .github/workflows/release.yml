@@ -35,7 +35,7 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Download macOS artifacts from CI workflow
-        uses: dawidd6/action-download-artifact@v3
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: CI.yml
           run_id: ${{ github.event.workflow_run.id }}
@@ -116,7 +116,7 @@ jobs:
         run: yarn napi create-npm-dirs
 
       - name: Download Linux artifacts from CI workflow
-        uses: dawidd6/action-download-artifact@v3
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: CI.yml
           run_id: ${{ github.event.workflow_run.id }}
@@ -126,7 +126,7 @@ jobs:
 
       - name: Download Windows artifacts from CI workflow
         if: vars.ENABLE_WINDOWS_BUILDS == 'true'
-        uses: dawidd6/action-download-artifact@v3
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: CI.yml
           run_id: ${{ github.event.workflow_run.id }}
