@@ -1,4 +1,11 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
+# Run lint-staged to format and lint staged files
 yarn lint-staged
+
+# Build the project to ensure dist directory exists
+yarn build:debug
+
+# Run tests to ensure everything works
+yarn test
